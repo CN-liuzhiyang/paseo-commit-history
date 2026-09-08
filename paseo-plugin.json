@@ -1,0 +1,6 @@
+{
+  "id": "commit-history",
+  "requirements": {
+    "paseo": ">=0.7.2"
+  }
+}
