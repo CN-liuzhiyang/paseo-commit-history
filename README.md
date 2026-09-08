@@ -19,7 +19,16 @@ shipping in 0.8). The manifest currently declares `>=0.7.2` only because the 0.8
 still reports `0.7.2`; it will be raised to `>=0.8.0` when 0.8 is released.
 
 Opening a commit from the panel needs a host that exposes `navigation.openCommitDiff` to plugins
-(getpaseo/paseo PR pending). Until then a row press copies the SHA.
+([getpaseo/paseo#4460](https://github.com/getpaseo/paseo/pull/4460)). Until then a row press copies
+the SHA.
+
+The History panel as a workspace tab:
+
+![History panel showing shas, subjects, ref badges, authors and relative times](docs/history-center-tab.png)
+
+In the Explorer, with all-branches scope, and a row press opening the commit diff:
+
+![History in the Explorer next to the commit diff it opened](docs/history-opens-commit-diff.png)
 
 ## Install
 
