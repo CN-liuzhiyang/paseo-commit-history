@@ -18,9 +18,10 @@ const COMMIT_LOG_MAX_REFS_PER_COMMIT = 8;
 const COMMIT_RECORD_SEPARATOR = "\x1e";
 const COMMIT_FIELD_SEPARATOR = "\x00";
 
-// Six NUL-separated fields, record-separated, with the subject last so arbitrary
-// subject text can never swallow a delimiter. `%D` is the ref decoration.
-const COMMIT_LOG_HISTORY_FORMAT = "%x1e%H%x00%h%x00%an%x00%aI%x00%D%x00%s";
+// Seven NUL-separated fields, record-separated, with the subject last so arbitrary
+// subject text can never swallow a delimiter. `%D` is the ref decoration, `%P`
+// the space-separated parent OIDs.
+const COMMIT_LOG_HISTORY_FORMAT = "%x1e%H%x00%h%x00%an%x00%aI%x00%D%x00%P%x00%s";
 
 // Cursors carry commit OIDs straight onto the git argv, so they are validated as
 // hex and nothing else. This also rejects `-`-prefixed option injection.
@@ -153,7 +154,7 @@ export function parseCommitLogRecords(stdout: string): CommitLogEntry[] {
       continue;
     }
     const fields = record.split(COMMIT_FIELD_SEPARATOR);
-    if (fields.length < 6) {
+    if (fields.length < 7) {
       continue;
     }
     const sha = (fields[0] ?? "").trim();
@@ -166,8 +167,9 @@ export function parseCommitLogRecords(stdout: string): CommitLogEntry[] {
       authorName: fields[2] ?? "",
       authorDate: (fields[3] ?? "").trim(),
       refs: parseCommitDecoration((fields[4] ?? "").trim()),
+      parents: (fields[5] ?? "").split(" ").filter((parent) => parent.length > 0),
       // Trailing newline belongs to the record framing, not the subject.
-      subject: (fields[5] ?? "").replace(/\n$/, ""),
+      subject: (fields[6] ?? "").replace(/\n$/, ""),
     });
   }
   return commits;

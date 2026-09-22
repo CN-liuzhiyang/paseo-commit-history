@@ -3,13 +3,29 @@ import { copyText, FlatList, Icon, useToast } from "@getpaseo/plugin/client/reac
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View, type LayoutChangeEvent } from "react-native";
 import type { CommitLogEntry, CommitLogScope } from "../shared/commit-log";
+import { layoutCommitGraph, type GraphEdge, type GraphRow } from "./commit-graph";
+import { graphWidthForLanes } from "./commit-graph-cell";
 import { CommitRow } from "./commit-row";
 import type { PluginTheme } from "./theme";
 import { useCommitLog } from "./use-commit-log";
 
 // Below this the author column crowds the subject out on a sidebar-width pane.
 const AUTHOR_MIN_WIDTH = 560;
+// Below this the SHA goes too; the subject is the one column that must survive.
+const SHA_MIN_WIDTH = 420;
+// The graph never takes more than this many lanes from the subject. A wide pane
+// can afford a busy all-branches view; a sidebar cannot.
+const GRAPH_MAX_LANES_WIDE = 10;
+const GRAPH_MAX_LANES_NARROW = 5;
+const ROW_HEIGHT = 28;
+const ROW_HEIGHT_COMPACT = 36;
 const SKELETON_ROWS = 6;
+
+const EMPTY_COMMITS: readonly CommitLogEntry[] = [];
+const NO_EDGES: readonly GraphEdge[] = [];
+// Only reachable if the graph and the list ever disagree on length; draws a
+// bare node rather than nothing.
+const ORPHAN_ROW: GraphRow = { lane: 0, color: 0, isMerge: false, edgesDown: [] };
 
 const SCOPE_OPTIONS: readonly { value: CommitLogScope; label: string }[] = [
   { value: "head", label: "Current branch" },
@@ -17,6 +33,7 @@ const SCOPE_OPTIONS: readonly { value: CommitLogScope; label: string }[] = [
 ];
 
 function usePanelStyles(theme: PluginTheme, compact: boolean) {
+  const rowHeight = compact ? ROW_HEIGHT_COMPACT : ROW_HEIGHT;
   return useMemo(
     () => ({
       container: { flex: 1, minHeight: 0, backgroundColor: theme.colors.surface0 },
@@ -82,11 +99,20 @@ function usePanelStyles(theme: PluginTheme, compact: boolean) {
         alignItems: "center" as const,
         gap: 8,
         paddingHorizontal: 8,
-        minHeight: 28,
+        height: rowHeight,
       },
       skeletonBlock: { height: 10, borderRadius: 4, backgroundColor: theme.colors.surface2 },
+      // Stands where the graph node will land, so the layout does not jump on load.
+      skeletonNode: {
+        width: 8,
+        height: 8,
+        marginLeft: 3,
+        marginRight: 3,
+        borderRadius: 4,
+        backgroundColor: theme.colors.surface2,
+      },
     }),
-    [theme, compact],
+    [theme, compact, rowHeight],
   );
 }
 
@@ -97,7 +123,8 @@ function Skeleton({ styles }: { styles: PanelStyles }) {
     <View accessible accessibilityLabel="Loading history">
       {Array.from({ length: SKELETON_ROWS }, (_, index) => (
         <View key={index} style={styles.skeletonRow}>
-          <View style={[styles.skeletonBlock, { width: 70 }]} />
+          <View style={styles.skeletonNode} />
+          <View style={[styles.skeletonBlock, { width: 62 }]} />
           <View style={[styles.skeletonBlock, { flex: 1, height: 12 }]} />
           <View style={[styles.skeletonBlock, { width: 40 }]} />
         </View>
@@ -197,7 +224,12 @@ export function HistoryPanel({
     directory,
   }));
   const [scope, setScope] = useState<CommitLogScope>("head");
-  const [showAuthor, setShowAuthor] = useState(true);
+  // Assume a wide pane until the first layout so the columns do not flash in.
+  const [paneWidth, setPaneWidth] = useState(AUTHOR_MIN_WIDTH);
+  const showAuthor = paneWidth >= AUTHOR_MIN_WIDTH;
+  const showSha = paneWidth >= SHA_MIN_WIDTH;
+  const graphMaxLanes = showAuthor ? GRAPH_MAX_LANES_WIDE : GRAPH_MAX_LANES_NARROW;
+  const rowHeight = layout.compact ? ROW_HEIGHT_COMPACT : ROW_HEIGHT;
   const { result, loadMore, refresh, isRefreshing, didResetAfterExpiry, acknowledgeReset } =
     useCommitLog({ hostId: host.id, workspaceId, scope });
 
@@ -208,8 +240,14 @@ export function HistoryPanel({
   }, []);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    setShowAuthor(event.nativeEvent.layout.width >= AUTHOR_MIN_WIDTH);
+    setPaneWidth(event.nativeEvent.layout.width);
   }, []);
+
+  // One layout over every loaded page: a lane opened on page 1 has to keep its
+  // colour and position when page 3 finally reaches the commit it was waiting for.
+  const commits = result.status === "loaded" ? result.data.commits : EMPTY_COMMITS;
+  const graph = useMemo(() => layoutCommitGraph(commits), [commits]);
+  const graphWidth = graphWidthForLanes(Math.min(graph.laneCount, graphMaxLanes));
 
   const handleScopeChange = useCallback(
     (next: CommitLogScope) => {
@@ -237,18 +275,33 @@ export function HistoryPanel({
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: CommitLogEntry }) => (
+    ({ item, index }: { item: CommitLogEntry; index: number }) => (
       <CommitRow
         commit={item}
+        graph={graph.rows[index] ?? ORPHAN_ROW}
+        graphAbove={index > 0 ? (graph.rows[index - 1]?.edgesDown ?? NO_EDGES) : NO_EDGES}
+        graphWidth={graphWidth}
+        graphMaxLanes={graphMaxLanes}
+        rowHeight={rowHeight}
         now={now}
+        showSha={showSha}
         showAuthor={showAuthor}
         theme={theme}
         onPress={handleCommitPress}
       />
     ),
-    [handleCommitPress, now, showAuthor, theme],
+    [graph, graphMaxLanes, graphWidth, handleCommitPress, now, rowHeight, showAuthor, showSha, theme],
   );
   const keyExtractor = useCallback((item: CommitLogEntry) => item.sha, []);
+  // Rows are fixed-height, so the list can place any index without measuring.
+  const getItemLayout = useCallback(
+    (_: ArrayLike<CommitLogEntry> | null | undefined, index: number) => ({
+      length: rowHeight,
+      offset: rowHeight * index,
+      index,
+    }),
+    [rowHeight],
+  );
 
   const notice = didResetAfterExpiry
     ? "History changed while loading. Reloaded from the top."
@@ -284,6 +337,7 @@ export function HistoryPanel({
         data={result.data.commits}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
         contentContainerStyle={styles.listContent}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}

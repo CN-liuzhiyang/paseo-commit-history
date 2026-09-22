@@ -19,6 +19,9 @@ export const commitLogEntrySchema = z.object({
   authorName: z.string(),
   authorDate: z.string(), // ISO 8601
   refs: z.array(commitLogRefSchema),
+  // Full parent OIDs, first parent first. This is what lets the client lay the
+  // commits out as a graph instead of a flat list.
+  parents: z.array(z.string()),
 });
 export type CommitLogEntry = z.infer<typeof commitLogEntrySchema>;
 

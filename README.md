@@ -3,6 +3,8 @@
 A [Paseo](https://paseo.sh) plugin that adds a **History** workspace panel: browse the full commit
 log of a checkout, not just the commits ahead of base that the built-in Changes panel shows.
 
+- A branch graph down the left edge: one lane per line of development, merges fanning out and
+  folding back in, a halo on the checked-out commit, hollow nodes for merges.
 - Current-branch or all-branches scope (local, remote-tracking, and tags).
 - Short SHA, subject, ref badges, relative time, and author on wide panes.
 - Cursor-based paging that survives force-pushes: when a pinned starting commit disappears the
@@ -69,4 +71,6 @@ paseo plugin logs commit-history
 | `server/commit-log.ts`       | daemon  | `git log` paging with pinned-tip cursors                       |
 | `server/list-commit-log.ts`  | daemon  | RPC handler; resolves the workspace directory on the daemon    |
 | `client/history-panel.tsx`   | app     | The panel: scope toggle, refresh, list, load states            |
+| `client/commit-graph.ts`     | app     | Lane layout: which lane each commit sits in and where lines go |
+| `client/commit-graph-cell.tsx` | app   | Paints one row's slice of the graph with plain views           |
 | `client/use-commit-log.ts`   | app     | Infinite query with expired-cursor reset                       |

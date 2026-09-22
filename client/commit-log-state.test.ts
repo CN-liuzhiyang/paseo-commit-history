@@ -10,6 +10,7 @@ function commit(sha: string) {
     authorName: "Ada",
     authorDate: "2026-06-13T10:00:00.000Z",
     refs: [],
+    parents: [],
   };
 }
 

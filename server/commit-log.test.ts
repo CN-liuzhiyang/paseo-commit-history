@@ -124,7 +124,8 @@ describe("parseCommitDecoration", () => {
 describe("parseCommitLogRecords", () => {
   it("keeps subjects containing the delimiters intact", () => {
     const subject = "fix: a, b -> c and tag: not-a-tag";
-    const record = `\x1e${"1".repeat(40)}\x001111111\x00Ada\x002026-06-13T10:00:00Z\x00HEAD -> refs/heads/main\x00${subject}\n`;
+    const parents = `${"2".repeat(40)} ${"3".repeat(40)}`;
+    const record = `\x1e${"1".repeat(40)}\x001111111\x00Ada\x002026-06-13T10:00:00Z\x00HEAD -> refs/heads/main\x00${parents}\x00${subject}\n`;
 
     expect(parseCommitLogRecords(record)).toEqual([
       {
@@ -136,9 +137,16 @@ describe("parseCommitLogRecords", () => {
           { kind: "head", name: "HEAD" },
           { kind: "local_branch", name: "main" },
         ],
+        parents: ["2".repeat(40), "3".repeat(40)],
         subject,
       },
     ]);
+  });
+
+  it("gives a root commit an empty parent list", () => {
+    const record = `\x1e${"1".repeat(40)}\x001111111\x00Ada\x002026-06-13T10:00:00Z\x00\x00\x00initial\n`;
+
+    expect(parseCommitLogRecords(record)[0]?.parents).toEqual([]);
   });
 });
 
@@ -217,6 +225,26 @@ describe("listCommitLogPage", () => {
     expect(all.commits.map((commit) => commit.sha)).toContain(sideSha);
     expect(all.pinnedTipCount).toBeGreaterThan(1);
     expect(all.pinnedTipsTruncated).toBe(false);
+  });
+
+  it("reports every parent of a merge so the graph can fan out", async () => {
+    const { repoDir } = initRepoOnMain();
+    const rootSha = headShas(repoDir)[0];
+    git(["checkout", "-b", "feature"], repoDir);
+    commitFile(repoDir, "feature.txt", "feature\n", "On the feature branch");
+    const featureSha = headShas(repoDir)[0];
+    git(["checkout", "main"], repoDir);
+    commitFile(repoDir, "main.txt", "main\n", "On main");
+    const mainSha = headShas(repoDir)[0];
+    git(["-c", "commit.gpgsign=false", "merge", "--no-ff", "-m", "Merge feature", "feature"], repoDir);
+
+    const page = await listCommitLogPage({ cwd: repoDir, scope: "head", limit: 50 });
+    const bySha = new Map(page.commits.map((commit) => [commit.sha, commit.parents]));
+
+    expect(page.commits[0]?.parents).toEqual([mainSha, featureSha]);
+    expect(bySha.get(mainSha)).toEqual([rootSha]);
+    expect(bySha.get(featureSha)).toEqual([rootSha]);
+    expect(bySha.get(rootSha)).toEqual([]);
   });
 
   it("reports an expired cursor when the pinned tip is gone", async () => {
